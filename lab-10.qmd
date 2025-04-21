@@ -1,0 +1,301 @@
+---
+title: "Lab 10: Distances and the Border Zone"
+subtitle: "Ecosystem Science and Sustainability"
+author:
+  - name: Cecily Sperber
+    email: csperber@colostate.edu
+format:
+  html:
+    self-contained: true
+execute:
+  echo: true
+---
+
+```{r}
+# spatial data science
+library(tidyverse)
+library(sf)
+library(units)
+
+# Data
+library(AOI)
+
+# Visualization
+library(gghighlight)
+library(ggrepel)
+library(knitr)
+```
+
+# Question 1
+```{r}
+eqdc <- '+proj=eqdc +lat_0=40 +lon_0=-96 +lat_1=20 +lat_2=60 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs'
+
+conus_states <- aoi_get(state = "conus")
+conus_states_proj <- st_transform(conus_states, crs = eqdc)
+
+countries <- aoi_get(country = c("MX", "CA", "USA"))
+countries_proj <- st_transform(countries, crs = eqdc)
+
+cities_raw <- read_csv("data/simplemaps_uscities_basicv1.90/uscities.csv")
+
+cities_sf <- st_as_sf(cities_raw,
+                      coords = c("lng", "lat"),
+                      crs = 4326,  # WGS84
+                      remove = FALSE)
+
+cities_proj <- st_transform(cities_sf, crs = eqdc)
+
+cities_proj <- st_join(cities_proj, conus_states_proj, join = st_within, left = FALSE)
+
+cities_proj <- st_transform(cities_sf, crs = st_crs(conus_states_proj))
+
+cities_conus <- cities_proj %>%
+  filter(state_name %in% conus_states_proj$state_name)
+
+ggplot() +
+  geom_sf(data = countries_proj, fill = "gray90") +
+  geom_sf(data = conus_states_proj, fill = "white", color = "black") +
+  geom_sf(data = cities_conus, color = "red", size = 0.4, alpha = 0.6) +
+  coord_sf(xlim = st_bbox(conus_states_proj)[c("xmin", "xmax")],
+           ylim = st_bbox(conus_states_proj)[c("ymin", "ymax")],
+           datum = st_crs(conus_states_proj)) +
+  theme_minimal() +
+  labs(title = "Projected Cities and Boundaries in the United States")
+
+```
+
+# Question 2.1
+```{r}
+usa_border <- st_union(conus_states_proj) %>%
+  st_cast("MULTILINESTRING")  
+
+cities_farthest_state <- cities_conus %>%
+  mutate(dist_state_border = st_distance(geometry, usa_border))
+
+cities_farthest_state <- cities_farthest_state %>%
+  mutate(dist_state_border_km = set_units(dist_state_border, "km"))
+
+top_five_cities <- cities_farthest_state %>%
+  arrange(desc(dist_state_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_state_border_km)  
+
+library(flextable)
+flextable(top_five_cities)
+
+```
+# Question 2.2
+```{r}
+usa_state_borders <- st_combine(conus_states_proj) %>%
+  st_cast("MULTILINESTRING")
+
+cities_farthest_state <- cities_conus %>%
+  mutate(dist_state_border = st_distance(geometry, usa_state_borders))
+
+cities_farthest_state <- cities_farthest_state %>%
+  mutate(dist_state_border_km = set_units(dist_state_border, "km"))
+
+top_five_cities_state_border <- cities_farthest_state %>%
+  arrange(desc(dist_state_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_state_border_km) 
+
+library(flextable)
+flextable(top_five_cities_state_border)
+
+```
+
+# Question 2.3
+```{r}
+mexico <- countries_proj %>%
+  filter(name == "Mexico")  
+
+mexico_border <- st_combine(mexico) %>%
+  st_cast("MULTILINESTRING")
+
+cities_farthest_mexico <- cities_conus %>%
+  mutate(dist_mexico_border = st_distance(geometry, mexico_border))
+
+cities_farthest_mexico <- cities_farthest_mexico %>%
+  mutate(dist_mexico_border_km = set_units(dist_mexico_border, "km"))
+
+top_five_cities_mexico_border <- cities_farthest_mexico %>%
+  arrange(desc(dist_mexico_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_mexico_border_km) 
+
+library(flextable)
+flextable(top_five_cities_mexico_border)
+
+```
+
+# Question 2.4
+```{r}
+canada <- countries_proj %>%
+  filter(name == "Canada")  
+
+canada_border <- st_combine(canada) %>%
+  st_cast("MULTILINESTRING") 
+
+cities_farthest_canada <- cities_conus %>%
+  mutate(dist_canada_border = st_distance(geometry, canada_border))
+
+cities_farthest_canada <- cities_farthest_canada %>%
+  mutate(dist_canada_border_km = set_units(dist_canada_border, "km"))
+
+top_five_cities_canada_border <- cities_farthest_canada %>%
+  arrange(desc(dist_canada_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_canada_border_km) 
+
+library(flextable)
+flextable(top_five_cities_canada_border)
+
+```
+
+# Question 3.1 
+```{r}
+top_10_cities <- cities_conus %>%
+  arrange(desc(population)) %>%
+  head(10)
+
+ggplot() +
+  geom_sf(data = countries_proj, fill = "gray90") +
+  geom_sf(data = conus_states_proj, fill = "white", color = "black", lty = 1, size = 0.5) +
+  geom_sf(data = top_10_cities, color = "red", size = 1, alpha = 0.8) +
+  ggrepel::geom_label_repel(data = top_10_cities, 
+                            aes(x = st_coordinates(geometry)[, 1], 
+                                y = st_coordinates(geometry)[, 2], 
+                                label = city), 
+                            size = 3, max.overlaps = 10) +
+  coord_sf(xlim = st_bbox(conus_states_proj)[c("xmin", "xmax")],
+           ylim = st_bbox(conus_states_proj)[c("ymin", "ymax")],
+           datum = st_crs(conus_states_proj)) +
+  theme_minimal() +
+  labs(title = "Top 10 Largest Cities in CONUS", 
+       subtitle = "Cities labeled with names",
+       x = "Equidistant Coordinates",
+       y = "Equidistant Coordinates")
+
+```
+# Question 3.2
+```{r}
+cities_conus <- cities_conus %>%
+  mutate(dist_to_border_km = as.numeric(set_units(st_distance(cities_conus, usa_border), "km")))
+
+top_five_cities_border <- cities_conus %>%
+  arrange(desc(dist_to_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_to_border_km, geometry)
+
+top_five_cities_border_coords <- st_coordinates(top_five_cities_border$geometry)
+
+ggplot() +
+  geom_sf(data = countries_proj, fill = "gray90") +
+  geom_sf(data = conus_states_proj, fill = "white", color = "black", lty = 1, size = 0.5) +
+  geom_sf(data = cities_conus, aes(color = dist_to_border_km), size = 0.6, alpha = 0.6) +
+  scale_color_viridis_c(option = "C", name = "Distance to Border (km)") +
+  ggrepel::geom_label_repel(data = top_five_cities_border, 
+                            aes(x = top_five_cities_border_coords[, 1], 
+                                y = top_five_cities_border_coords[, 2], 
+                                label = city), 
+                            size = 3, max.overlaps = 10) +
+  coord_sf(xlim = st_bbox(conus_states_proj)[c("xmin", "xmax")],
+           ylim = st_bbox(conus_states_proj)[c("ymin", "ymax")],
+           datum = st_crs(conus_states_proj)) +
+  theme_minimal() +
+  labs(title = "USA Cities Colored by Distance from National Border", 
+       subtitle = "Top 5 cities",
+       x = "Equidistant Coordinates",
+       y = "Equidistant Coordinates")
+
+```
+
+# Question 3.3 
+```{r}
+cities_conus <- cities_conus %>%
+  mutate(dist_to_state_border_km = as.numeric(set_units(st_distance(cities_conus, usa_state_borders), "km")))
+
+top_five_cities_state_border <- cities_conus %>%
+  arrange(desc(dist_to_state_border_km)) %>%
+  head(5) %>%
+  select(city, state_name, dist_to_state_border_km, geometry)
+
+top_five_cities_state_border_coords <- st_coordinates(top_five_cities_state_border$geometry)
+
+ggplot() +
+  geom_sf(data = countries_proj, fill = "gray90") +
+  geom_sf(data = conus_states_proj, fill = "white", color = "black", lty = 1, size = 0.5) +
+  geom_sf(data = cities_conus, aes(color = dist_to_state_border_km), size = 0.6, alpha = 0.6) +
+  scale_color_viridis_c(option = "C", name = "Distance to State Border (km)") +
+  ggrepel::geom_label_repel(data = top_five_cities_state_border, 
+                            aes(x = top_five_cities_state_border_coords[, 1], 
+                                y = top_five_cities_state_border_coords[, 2], 
+                                label = city), 
+                            size = 3, max.overlaps = 10) +
+  coord_sf(xlim = st_bbox(conus_states_proj)[c("xmin", "xmax")],
+           ylim = st_bbox(conus_states_proj)[c("ymin", "ymax")],
+           datum = st_crs(conus_states_proj)) +
+  theme_minimal() +
+  labs(title = "Cities Colored by Distance from Nearest State Border", 
+       subtitle = "Top 5 cities",
+       x = "Equidistant Coordinates",
+       y = "Equidistant Coordinates")
+
+```
+
+# Question 3.4 
+```{r}
+cities_conus <- cities_conus %>%
+  mutate(dist_to_mexico_km = as.numeric(set_units(st_distance(cities_conus, mexico_border), "km")),
+         dist_to_canada_km = as.numeric(set_units(st_distance(cities_conus, canada_border), "km")),
+         diff_mexico_canada = abs(dist_to_mexico_km - dist_to_canada_km))
+
+cities_equidistant <- cities_conus %>%
+  filter(diff_mexico_canada <= 100)
+
+top_five_populous_equidistant <- cities_equidistant %>%
+  arrange(desc(population)) %>%
+  head(5) %>%
+  select(city, state_name, population, dist_to_mexico_km, dist_to_canada_km, geometry)
+
+top_five_populous_equidistant_coords <- st_coordinates(top_five_populous_equidistant$geometry)
+
+ggplot() +
+  geom_sf(data = countries_proj, fill = "gray90") +
+  geom_sf(data = conus_states_proj, fill = "white", color = "black", lty = 1, size = 0.5) +
+  geom_sf(data = cities_equidistant, aes(color = diff_mexico_canada), size = 0.6, alpha = 0.6) +
+  scale_color_viridis_c(option = "C", name = "Distance Difference") +
+  gghighlight::gghighlight(use_group_by = FALSE, 
+                            label_key = city,  
+                            label_params = list(size = 3, max.overlaps = 10)) +
+  ggrepel::geom_label_repel(data = top_five_populous_equidistant,
+                            aes(x = top_five_populous_equidistant_coords[, 1], 
+                                y = top_five_populous_equidistant_coords[, 2], 
+                                label = city), 
+                            size = 3, max.overlaps = 10) +
+  coord_sf(xlim = st_bbox(conus_states_proj)[c("xmin", "xmax")],
+           ylim = st_bbox(conus_states_proj)[c("ymin", "ymax")],
+           datum = st_crs(conus_states_proj)) +
+  theme_minimal() +
+  labs(title = "Cities Equidistant from Mexico & Canada",
+       subtitle = "Top 5 most populous cities",
+       x = "Equidistant Coordinates",
+       y = "Equidistant Coordinates")   
+
+```
+
+# Question 4.1
+```{r}
+
+```
+
+# Question 4.2
+```{r}
+
+```
+
+# Question 4.3
+```{r}
+
+```
