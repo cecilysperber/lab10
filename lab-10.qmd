@@ -81,7 +81,7 @@ top_five_cities <- cities_farthest_state %>%
   select(city, state_name, dist_state_border_km)  
 
 library(flextable)
-flextable(top_five_cities)
+flextable(st_drop_geometry(top_five_cities))
 
 ```
 # Question 2.2
@@ -101,7 +101,7 @@ top_five_cities_state_border <- cities_farthest_state %>%
   select(city, state_name, dist_state_border_km) 
 
 library(flextable)
-flextable(top_five_cities_state_border)
+flextable(st_drop_geometry(top_five_cities_state_border))
 
 ```
 
@@ -125,7 +125,7 @@ top_five_cities_mexico_border <- cities_farthest_mexico %>%
   select(city, state_name, dist_mexico_border_km) 
 
 library(flextable)
-flextable(top_five_cities_mexico_border)
+flextable(st_drop_geometry(top_five_cities_mexico_border))
 
 ```
 
@@ -149,7 +149,7 @@ top_five_cities_canada_border <- cities_farthest_canada %>%
   select(city, state_name, dist_canada_border_km) 
 
 library(flextable)
-flextable(top_five_cities_canada_border)
+flextable(st_drop_geometry(top_five_cities_canada_border))
 
 ```
 
@@ -287,15 +287,85 @@ ggplot() +
 
 # Question 4.1
 ```{r}
+border_zone_threshold_km <- set_units(160, "km")
+
+cities_conus <- cities_conus %>%
+  mutate(in_border_zone = set_units(dist_to_border_km, "km") <= border_zone_threshold_km)
+
+n_border_zone_cities <- sum(cities_conus$in_border_zone, na.rm = TRUE)
+
+population_border_zone <- sum(cities_conus$population[cities_conus$in_border_zone], na.rm = TRUE)
+
+total_population <- sum(cities_conus$population, na.rm = TRUE)
+
+percent_population_in_zone <- (population_border_zone / total_population) * 100
+
+border_zone_summary <- tibble(
+  `Cities in Border Zone` = n_border_zone_cities,
+  `Population in Border Zone` = population_border_zone,
+  `Total Population` = total_population,
+  `Percent in Zone (%)` = round(percent_population_in_zone, 2)
+)
+
+library(knitr)
+kable(border_zone_summary, caption = "Summary of Cities and Population in 100 Mile Border Zone")
 
 ```
 
 # Question 4.2
 ```{r}
+top10_danger_zone <- cities_conus %>%
+  filter(in_border_zone) %>%
+  slice_max(order_by = population, n = 10)
+
+ggplot(cities_conus, aes(x = lng, y = lat)) +
+  geom_point(aes(color = population), size = 1, alpha = 0.6) +
+  gghighlight(in_border_zone, use_direct_label = FALSE) +
+  scale_color_gradient(low = "orange", high = "darkred", trans = "log10") +
+  geom_text_repel(
+    data = top10_danger_zone,
+    aes(label = city, x = lng, y = lat),
+    size = 3,
+    max.overlaps = 10
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(
+    title = "U.S. Cities within 100 Mile Border Zone",
+    subtitle = "10 Most Populous Cities in Danger Zone",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Population"
+  )
 
 ```
 
 # Question 4.3
 ```{r}
+top_danger_zone_by_state <- cities_conus %>%
+  filter(in_border_zone) %>%
+  group_by(state_name) %>%
+  slice_max(order_by = population, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+ggplot(cities_conus, aes(x = lng, y = lat)) +
+  geom_point(aes(color = population), size = 1, alpha = 0.6) +
+  gghighlight(in_border_zone, use_direct_label = FALSE) +
+  scale_color_gradient(low = "orange", high = "darkred", trans = "log10") +
+  geom_text_repel(
+    data = top_danger_zone_by_state,
+    aes(label = city, x = lng, y = lat),
+    size = 3,
+    max.overlaps = 50
+  ) +
+  coord_fixed(1.3) +
+  theme_minimal() +
+  labs(
+    title = "Most Populous City in Each State",
+    subtitle = "In 100 Mile Border Zone",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Population"
+  )
 
 ```
